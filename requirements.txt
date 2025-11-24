@@ -1,0 +1,14 @@
+numpy
+scipy
+pandas
+librosa
+pydub
+simpleaudio
+scikit-learn
+xgboost
+optuna
+joblib
+tqdm
+mutagen
+threadpoolctl
+matplotlib

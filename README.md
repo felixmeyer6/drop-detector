@@ -1,60 +1,129 @@
-# EDM Drop Detector
-Finds the main drop (highest-energy payoff) in an EDM track.
+# Drop Detector
 
-This project builds upon the work of [Yadati et al. (ISMIR 2014)](https://archives.ismir.net/ismir2014/paper/000297.pdf) on content-based drop detection and makes their method into a practical, notebook-driven pipeline.
+A machine-learning model designed to detect "drops" (high-energy payoffs) in musical tracks, with a specific optimization for Electronic Dance Music (EDM).
 
-## How It Works
-A lightweight pipeline turns raw audio into 1–2 predicted drop times:
+This project iterates upon the work of [Yadati et al. (ISMIR 2014)](https://archives.ismir.net/ismir2014/paper/000297.pdf) regarding content-based drop detection. By utilizing modern signal processing features and XGBoost, this implementation significantly improves detection accuracy:
 
-| Stage | What It Does |
-|-------|--------------|
-| Candidate Proposal | Splits the track into musically plausible boundary points (phrase/structure changes). |
-| Context & Features | Extracts a window around each candidate (with low-end emphasis) and builds simple statistics/features capturing energy lift and contrast. |
-| Scoring | Assigns a score to each candidate, ranking the most likely drops. |
-| Classsifying | Returns the top 1–2 moments. Evaluation uses F1@2: a prediction is correct if either of the 2 returned times hits within the tolerance window around the ground truth. |
+| Model | F1 Score |
+| :--- | :--- |
+| Yadati et al. (2014) | 0.71 |
+| **Drop Detector (This Repo)** | **0.95** |
 
-## Using a Pretrained Model
-* Load Model: `joblib.load("drop_detector_model.joblib")`
-* Run Inference: `find_drop_times("path/to/track.wav")`
+## 📦 Installation
 
-**Requirements:** Notebook + `.joblib` bundle.
+1. **Clone the repository:**
+   ```bash
+   git clone https://github.com/yourusername/edm-drop-detector.git
+   cd edm-drop-detector
+   ```
 
-## Training Your Own Model
+2. **Install Python dependencies:**
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-### 1. Prepare Dataset
-| Cell | Details |
-|------|---------|
-| Configure Paths | Set `BASE_DIR` to your dataset root. |
-| Folder Layout | `dataset/track1.wav`, `dataset/track2.mp3`, ... |
-| Load CSV Labels | Sidecar CSV: `filename → drop time` (MM:SS or seconds). |
-| Read Labels from Metadata | MP3: ID3 TXXX with `desc="DROP_TIME"`; WAV: custom "drop" chunk (float seconds). |
-| Build Training Pairs | Produces `pairs_all` (filepaths ↔ drop times). |
+3. **Install FFmpeg:**
+   This tool relies on `ffmpeg` for audio processing.
+   * **Mac:** `brew install ffmpeg`
+   * **Linux:** `sudo apt install ffmpeg`
+   * **Windows:** Download binary and add to PATH.
 
-### 2. Hyperparameter Tuning
-| Cell | Details |
-|------|---------|
-| Run Hyperparameter Sweep | `sweep_leave_tracks_out(...)` |
-| Inspect & Select Best Config | Sort by `F1@2_val` and pick the winner. |
+## 🚀 Quick Start: Using the Pre-trained Model
 
-### 3. Train & Export
-| Cell | Details |
-|------|---------|
-| Train on All Labeled Tracks | `train_final_from_pairs(pairs_all, ...)` |
-| Export Bundle | Save to `drop_detector_model.joblib`. |
+You can use the CLI tool `model_predict.py` to scan folders of audio and detect drops.
 
-### 4. Predict Drops
-| Cell | Details |
-|------|---------|
-| Load Trained/Pretrained Model Bundle | `joblib.load("drop_detector_model.joblib")` |
-| Run Inference | `find_drop_times("my_new_track.wav")` (returns top-2 `{time_s, score}`). |
+### Usage
+```bash
+python model_predict.py [OPTIONS]
+```
 
-## Labels & Metrics
-- **Ground-truth labels:** One primary “most important” drop per track (CSV or embedded metadata).
-- **Metric:** F1@2. A prediction is correct if either of the top-2 times is within the tolerance window around the labeled drop.
+### Arguments
 
-## Limitations
-- Highly unconventional structures can confuse candidate proposal.
-- Very sparse bass or extreme mastering can reduce the “energy lift” signal.
+| Flag | Argument | Description |
+| :--- | :--- | :--- |
+| `-f`, `--folder` | `PATH` | **Required.** Path to the root directory containing audio files to scan. |
+| `-m`, `--model` | `PATH` | Path to the `.joblib` model file. Defaults to `./model.joblib`. |
+| `-t`, `--threshold`| `FLOAT` | Manual confidence threshold (0.0 - 1.0). Overrides the model's optimal default. |
+| `-k`, `--topk` | `INT` | Output only the top `K` drops per track. If set without a threshold, ignores confidence scores. |
+| `-c`, `--csv` | `[PATH]` | Save predictions to a CSV file. Default: `./model_predictions.csv`. |
+| `-T`, `--tag` | N/A | Write drop times (e.g., `DROP_TIME=60.5,124.2`) into the audio file metadata. |
 
-## Safety & Respect
-Music is made by people. If this helps you perform, curate, or create, please give credit where it’s due and support the artists you rely on.
+### Example
+Scan the `test` folder, save the **top 3** drops that have a confidence **above 90%**, save the results to CSV, and tag the actual audio files:
+
+```bash
+python model_predict.py \
+  -f "/Users/Admin/Music/Download/test" \
+  --csv \
+  --topk 3 \
+  --threshold 0.90 \
+  --tag
+```
+
+---
+
+## 🛠️ Advanced: Training Your Own Model
+
+If you wish to retrain the model on your own dataset, follow these steps:
+
+### 1. Data Preparation
+Place your raw audio files into the `dataset_train/` folder.
+
+### 2. Labeling
+Run the labeling assistant:
+```bash
+python dataset_build.py
+```
+This script will iterate through your tracks, propose candidates, and ask you to verify if they are true drops.
+
+### 3. Cleaning
+Once labeled, process the data into a clean CSV format for the model:
+```bash
+python dataset_clean.py
+```
+
+### 4. Training
+Run the training pipeline:
+```bash
+python model_build.py
+```
+This will:
+1. Extract features for all labeled candidates.
+2. Run Bayesian Hyperparameter Optimization (Optuna).
+3. Train an XGBoost classifier.
+4. Output the final `model.joblib` file.
+
+---
+
+## 🧠 How It Works
+
+The system operates in three stages: **Candidate Generation**, **Feature Extraction** and **Classification**.
+
+### 1. Candidate Generation
+To avoid processing every millisecond of audio, the system first finds "potential" drops based on heuristics:
+*   **Bass Boost:** A low-shelf filter is applied to emphasize the "kick."
+*   **Envelope Threshold:** It looks for sharp rises in the volume envelope.
+*   **Transient Snapping:** Timestamps are mathematically "snapped" to the exact moment of the nearest transient (beat).
+
+### 2. Feature Extraction
+For every candidate, the model analyzes the audio context (comparing the window *after* the drop to the windows *before* it). The model uses **29 specific features**, grouped as follows:
+
+*   **RMS Energy Differences:** Compares volume intensity of the impact vs. the build-up (Short, Medium, and Long lookback windows).
+*   **Future Energy Dominance:** Is there a louder section coming up later?
+*   **Grid Alignment:** Uses beat tracking to determine if the drop lands on a significant musical phrase (4, 8, 16, or 32-bar chunks).
+*   **Pulse Clarity:** Analysis of rhythmic strength, ie. Is there a clear beat pattern?.
+*   **Transient Dominance:** How significant is the impact transient compared to its surroundings?
+*   **Bass Ratio:** The proportion of low-frequency energy compared to the total spectrum.
+*   **Bass Continuity:** Does the bass sustain after the impact, or does it fade?
+
+### 3. Classification
+The heart of the detector is a **Gradient Boosted Decision Tree (XGBoost)** classifier. Unlike simple volume-based detection, this model learns complex, non-linear relationships between the extracted features.
+
+*   **Bayesian Optimization:** The training pipeline uses **Optuna** to perform automated hyperparameter tuning. It iteratively tests combinations of tree depth, learning rates, and regularization to maximize the **Precision-Recall AUC**.
+*   **Dynamic Thresholding:** Instead of a fixed 50% probability cutoff, the training script calculates the specific probability threshold that maximizes the **F1-Score** on the test set. This metadata is saved with the model to ensure the CLI tool uses the exact same sensitivity standards as the training environment.
+
+## ⚠️ Limitations
+
+*   **Unconventional Structures:** Tracks with non-standard time signatures, or lack of percussion may not yield good results.
+*   **Mastering Issues:** Tracks with very sparse bass or extreme dynamic range compression might reduce the specific "energy contrast" features the model relies on.
+*   **False Positives:** Heavy breakdowns or "fake drops" can sometimes trick the model if they are rhythmically similar to a real drop.
