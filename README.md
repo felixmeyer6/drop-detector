@@ -43,10 +43,10 @@ python model_predict.py [OPTIONS]
 | :--- | :--- | :--- |
 | `-f`, `--folder` | `PATH` | **Required.** Path to the root directory containing audio files to scan. |
 | `-m`, `--model` | `PATH` | Path to the `.joblib` model file. Defaults to `./model.joblib`. |
-| `-t`, `--threshold`| `FLOAT` | Manual confidence threshold (0.0 - 1.0). Overrides the model's optimal default. |
+| `-T`, `--threshold`| `FLOAT` | Manual confidence threshold (0.0 - 1.0). Overrides the model's optimal default. |
 | `-k`, `--topk` | `INT` | Output only the top `K` drops per track. If set without a threshold, ignores confidence scores. |
-| `-c`, `--csv` | `[PATH]` | Save predictions to a CSV file. Default: `./model_predictions.csv`. |
-| `-T`, `--tag` | N/A | Write drop times (e.g., `DROP_TIME=60.5,124.2`) into the audio file metadata. |
+| `-c`, `--csv` | `PATH` | Save predictions to a CSV file. Default: `./model_predictions.csv`. |
+| `-t`, `--tag` | N/A | Write drop times (e.g., `DROP_TIME=60.5,124.2`) into the audio file metadata. |
 
 ### Example
 Scan the `test` folder, save the **top 3** drops that have a confidence **above 90%**, save the results to CSV, and tag the actual audio files:
@@ -59,8 +59,6 @@ python model_predict.py \
   --threshold 0.90 \
   --tag
 ```
-
----
 
 ## 🛠️ Advanced: Training Your Own Model
 
@@ -93,37 +91,33 @@ This will:
 3. Train an XGBoost classifier.
 4. Output the final `model.joblib` file.
 
----
-
 ## 🧠 How It Works
 
-The system operates in three stages: **Candidate Generation**, **Feature Extraction** and **Classification**.
+The system utilizes a three-stage pipeline:
 
-### 1. Candidate Generation
-To avoid processing every millisecond of audio, the system first finds "potential" drops based on heuristics:
-*   **Bass Boost:** A low-shelf filter is applied to emphasize the "kick."
-*   **Envelope Threshold:** It looks for sharp rises in the volume envelope.
-*   **Transient Snapping:** Timestamps are mathematically "snapped" to the exact moment of the nearest transient (beat).
+### 1. 🔍 Candidate Generation
+Instead of scanning every millisecond, the system uses fast signal processing heuristics to identify potential points of interest:
+*   **Bass Boost & Envelope:** Applies a low-shelf filter and scans the volume envelope for sharp energy rises.
+*   **Transient Snapping:** Mathematically aligns timestamps to the exact "kick" or transient to ensure rhythmic accuracy.
 
-### 2. Feature Extraction
-For every candidate, the model analyzes the audio context (comparing the window *after* the drop to the windows *before* it). The model uses **29 specific features**, grouped as follows:
+### 2. 🎛️ Feature Extraction
+For each candidate, the model extracts **29 context-aware features**, comparing the audio *after* the impact against the build-up *before* it:
 
-*   **RMS Energy Differences:** Compares volume intensity of the impact vs. the build-up (Short, Medium, and Long lookback windows).
-*   **Future Energy Dominance:** Is there a louder section coming up later?
-*   **Grid Alignment:** Uses beat tracking to determine if the drop lands on a significant musical phrase (4, 8, 16, or 32-bar chunks).
-*   **Pulse Clarity:** Analysis of rhythmic strength, ie. Is there a clear beat pattern?.
-*   **Transient Dominance:** How significant is the impact transient compared to its surroundings?
-*   **Bass Ratio:** The proportion of low-frequency energy compared to the total spectrum.
-*   **Bass Continuity:** Does the bass sustain after the impact, or does it fade?
+*   **RMS Energy:** Does the volume increase?
+*   **Future Energy:** Is there a louder section coming up later?
+*   **Grid Alignment:** Does the candidate land on a significant 4, 8, 16, or 32-bar boundary?
+*   **Pulse Clarity:** Is there a strong, defined rhythmic pulse, or is the texture messy?
+*   **Transient Dominance:** Does the initial "kick" stand out compared to its surroundings?
+*   **Bass Ratio:** Is the sound spectrum suddenly dominated by low-frequency energy?
+*   **Bass Continuity:** Does the bassline sustain, or does it fade?
 
-### 3. Classification
-The heart of the detector is a **Gradient Boosted Decision Tree (XGBoost)** classifier. Unlike simple volume-based detection, this model learns complex, non-linear relationships between the extracted features.
-
-*   **Bayesian Optimization:** The training pipeline uses **Optuna** to perform automated hyperparameter tuning. It iteratively tests combinations of tree depth, learning rates, and regularization to maximize the **Precision-Recall AUC**.
-*   **Dynamic Thresholding:** Instead of a fixed 50% probability cutoff, the training script calculates the specific probability threshold that maximizes the **F1-Score** on the test set. This metadata is saved with the model to ensure the CLI tool uses the exact same sensitivity standards as the training environment.
+### 3. 🤖 Classification (XGBoost)
+The core logic is handled by a **Gradient Boosted Decision Tree**.
+*   **Optuna Tuning:** Uses Bayesian optimization to find the perfect hyperparameter combination (depth, learning rate, etc.) for maximizing precision.
+*   **Dynamic Thresholding:** Automatically calibrates the probability cutoff to maximize the **F1-Score**, rather than using a static 50% default.
 
 ## ⚠️ Limitations
 
-*   **Unconventional Structures:** Tracks with non-standard time signatures, or lack of percussion may not yield good results.
-*   **Mastering Issues:** Tracks with very sparse bass or extreme dynamic range compression might reduce the specific "energy contrast" features the model relies on.
-*   **False Positives:** Heavy breakdowns or "fake drops" can sometimes trick the model if they are rhythmically similar to a real drop.
+*   **Unconventional Structure:** Tracks with irregular time signatures or lack of percussion may yield fewer candidates.
+*   **Mastering:** Extreme compression or sparse bass mixing can mask the specific "energy contrast" features the model looks for.
+*   **Fake-outs:** "Fake drops" can sometimes trick the model if they are rhythmically similar to a real drop.
