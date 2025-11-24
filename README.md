@@ -2,7 +2,7 @@
 
 A machine-learning model designed to detect "drops" (high-energy payoffs) in musical tracks, with a specific optimization for Electronic Dance Music (EDM).
 
-This project iterates upon the work of [Yadati et al. (ISMIR 2014)](https://archives.ismir.net/ismir2014/paper/000297.pdf) regarding content-based drop detection. By utilizing modern signal processing features and XGBoost, this implementation significantly improves detection accuracy:
+This project iterates upon the work of [Yadati et al. (ISMIR 2014)](https://archives.ismir.net/ismir2014/paper/000297.pdf) regarding content-based drop detection. Using EDM-specific features and XGBoost, this implementation significantly improves detection accuracy:
 
 | Model | F1 Score |
 | :--- | :--- |
@@ -26,7 +26,7 @@ This project iterates upon the work of [Yadati et al. (ISMIR 2014)](https://arch
    This tool relies on `ffmpeg` for audio processing.
    * **Mac:** `brew install ffmpeg`
    * **Linux:** `sudo apt install ffmpeg`
-   * **Windows:** Download binary and add to PATH.
+   * **Windows:** Download [binary](https://www.ffmpeg.org/download.html#build-windows) and add to PATH.
 
 ## 🚀 Quick Start: Using the Pre-trained Model
 
@@ -62,7 +62,7 @@ python model_predict.py \
 
 ## 🛠️ Advanced: Training Your Own Model
 
-If you wish to retrain the model on your own dataset, follow these steps:
+If you wish to retrain the model on your own dataset:
 
 ### 1. Data Preparation
 Place your raw audio files into the `dataset_train/` folder.
@@ -96,9 +96,9 @@ This will:
 The system utilizes a three-stage pipeline:
 
 ### 1. 🔍 Candidate Generation
-Instead of scanning every millisecond, the system uses fast signal processing heuristics to identify potential points of interest:
+The code uses fast signal processing heuristics to identify potential points of interest:
 *   **Bass Boost & Envelope:** Applies a low-shelf filter and scans the volume envelope for sharp energy rises.
-*   **Transient Snapping:** Mathematically aligns timestamps to the exact "kick" or transient to ensure rhythmic accuracy.
+*   **Transient Snapping:** Mathematically aligns timestamps to the exact "kick" or transient.
 
 ### 2. 🎛️ Feature Extraction
 For each candidate, the model extracts **29 context-aware features**, comparing the audio *after* the impact against the build-up *before* it:
@@ -113,11 +113,11 @@ For each candidate, the model extracts **29 context-aware features**, comparing 
 
 ### 3. 🤖 Classification (XGBoost)
 The core logic is handled by a **Gradient Boosted Decision Tree**.
-*   **Optuna Tuning:** Uses Bayesian optimization to find the perfect hyperparameter combination (depth, learning rate, etc.) for maximizing precision.
-*   **Dynamic Thresholding:** Automatically calibrates the probability cutoff to maximize the **F1-Score**, rather than using a static 50% default.
+*   **Optuna Tuning:** Uses Bayesian optimization to find the perfect hyperparameter combination
+*   **Dynamic Thresholding:** Automatically calibrates the probability cutoff to maximize the **F1-Score**
 
 ## ⚠️ Limitations
 
-*   **Unconventional Structure:** Tracks with irregular time signatures or lack of percussion may yield fewer candidates.
-*   **Mastering:** Extreme compression or sparse bass mixing can mask the specific "energy contrast" features the model looks for.
-*   **Fake-outs:** "Fake drops" can sometimes trick the model if they are rhythmically similar to a real drop.
+*   Tracks with irregular time signatures or lack of percussion may yield fewer candidates.
+*   Extreme compression or sparse bass mixing can mask the specific contrast features the model looks for.
+*   "Fake drops" can trick the model if they are rhythmically similar to a real drop.
